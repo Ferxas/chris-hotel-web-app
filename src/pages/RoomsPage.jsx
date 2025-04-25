@@ -18,6 +18,7 @@ export default function RoomsPage() {
   const [editedNumber, setEditedNumber] = useState('');
   const [newNumber, setNewNumber] = useState('');
   const [newState, setNewState] = useState('SE');
+  const [formVisible, setFormVisible] = useState(false);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'rooms'), (snapshot) => {
@@ -39,6 +40,7 @@ export default function RoomsPage() {
         state: newState,
         lastCleaned: null,
         lastMaintenance: null,
+        cleaningBy: null,
         createdAt: Timestamp.now(),
       });
       setNewNumber('');
@@ -50,8 +52,7 @@ export default function RoomsPage() {
 
   const updateRoomState = async (id, newState) => {
     try {
-      const roomRef = doc(db, 'rooms', id);
-      await updateDoc(roomRef, { state: newState });
+      await updateDoc(doc(db, 'rooms', id), { state: newState });
     } catch (err) {
       alert('Error al actualizar estado: ' + err.message);
     }
@@ -59,8 +60,7 @@ export default function RoomsPage() {
 
   const saveEdit = async (roomId) => {
     try {
-      const roomRef = doc(db, 'rooms', roomId);
-      await updateDoc(roomRef, { number: editedNumber });
+      await updateDoc(doc(db, 'rooms', roomId), { number: editedNumber });
       setEditingRoomId(null);
     } catch (err) {
       alert('Error al editar número: ' + err.message);
@@ -68,9 +68,7 @@ export default function RoomsPage() {
   };
 
   const deleteRoom = async (roomId) => {
-    const confirm = window.confirm('¿Eliminar esta habitación?');
-    if (!confirm) return;
-
+    if (!window.confirm('¿Eliminar esta habitación?')) return;
     try {
       await deleteDoc(doc(db, 'rooms', roomId));
     } catch (err) {
@@ -78,67 +76,70 @@ export default function RoomsPage() {
     }
   };
 
-  const formatDate = (timestamp) => {
-    if (!timestamp) return '—';
-    const date = timestamp.seconds ? new Date(timestamp.seconds * 1000) : timestamp;
-    return formatDistanceToNow(date, { addSuffix: true, locale: es });
-  };
-
   const registerManual = async (roomId, type) => {
     try {
-      const roomRef = doc(db, 'rooms', roomId);
       const field = type === 'clean' ? 'lastCleaned' : 'lastMaintenance';
-      await updateDoc(roomRef, { [field]: Timestamp.now() });
+      await updateDoc(doc(db, 'rooms', roomId), { [field]: Timestamp.now() });
     } catch (err) {
       alert('Error al registrar: ' + err.message);
     }
   };
 
-  const startEditing = (room) => {
-    setEditingRoomId(room.id);
-    setEditedNumber(room.number);
+  const formatDate = (timestamp) => {
+    if (!timestamp) return '—';
+    const date = new Date(timestamp.seconds * 1000);
+    return formatDistanceToNow(date, { addSuffix: true, locale: es });
   };
 
   return (
     <div>
       <h1 className="text-2xl font-bold mb-4">🛏️ Gestión de Habitaciones</h1>
 
-      {/* Formulario para nueva habitación */}
-      <div className="bg-white p-4 rounded shadow mb-6">
-        <h2 className="text-lg font-semibold mb-2">➕ Nueva habitación</h2>
-        <div className="flex flex-wrap gap-4 items-center">
-          <input
-            type="text"
-            placeholder="Número de habitación"
-            className="border p-2 rounded w-48"
-            value={newNumber}
-            onChange={(e) => setNewNumber(e.target.value)}
-          />
-          <select
-            value={newState}
-            onChange={(e) => setNewState(e.target.value)}
-            className="border p-2 rounded"
-          >
-            <option value="SE">SE (Servicio)</option>
-            <option value="CO">CO (Check-out)</option>
-            <option value="CLEAN">CLEAN</option>
-          </select>
-          <button
-            onClick={createRoom}
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-          >
-            Crear habitación
-          </button>
-        </div>
-      </div>
+      <button
+        onClick={() => setFormVisible(!formVisible)}
+        className="mb-4 px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded"
+      >
+        {formVisible ? 'Ocultar formulario' : '➕ Nueva habitación'}
+      </button>
 
-      {/* Lista de habitaciones */}
+      {formVisible && (
+        <div className="bg-white p-4 rounded shadow mb-6">
+          <h2 className="text-lg font-semibold mb-2">➕ Nueva habitación</h2>
+          <div className="flex flex-wrap gap-4 items-center">
+            <input
+              type="text"
+              placeholder="Número de habitación"
+              className="border p-2 rounded w-48"
+              value={newNumber}
+              onChange={(e) => setNewNumber(e.target.value)}
+            />
+            <select
+              value={newState}
+              onChange={(e) => setNewState(e.target.value)}
+              className="border p-2 rounded"
+            >
+              <option value="SE">SE (Servicio)</option>
+              <option value="CO">CO (Check-out)</option>
+              <option value="CLEAN">CLEAN</option>
+            </select>
+            <button
+              onClick={createRoom}
+              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+            >
+              Crear habitación
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {rooms.map((room) => (
           <div
             key={room.id}
             className={`p-4 rounded shadow bg-white border-l-4 ${
-              room.state === 'SE'
+              room.cleaningBy
+                ? 'border-blue-500'
+                : room.state === 'SE'
                 ? 'border-yellow-400'
                 : room.state === 'CO'
                 ? 'border-red-400'
@@ -148,20 +149,20 @@ export default function RoomsPage() {
             }`}
           >
             {editingRoomId === room.id ? (
-              <div className="mb-2">
+              <>
                 <input
                   type="text"
                   value={editedNumber}
                   onChange={(e) => setEditedNumber(e.target.value)}
-                  className="border p-1 text-sm rounded w-full"
+                  className="border p-1 text-sm rounded w-full mb-2"
                 />
                 <button
-                  className="mt-1 text-sm bg-blue-100 hover:bg-blue-200 px-2 py-1 rounded"
+                  className="text-sm bg-blue-100 hover:bg-blue-200 px-2 py-1 rounded"
                   onClick={() => saveEdit(room.id)}
                 >
                   Guardar
                 </button>
-              </div>
+              </>
             ) : (
               <>
                 <h2 className="text-lg font-semibold">
@@ -169,7 +170,10 @@ export default function RoomsPage() {
                 </h2>
                 <button
                   className="text-xs text-blue-500 underline mb-2"
-                  onClick={() => startEditing(room)}
+                  onClick={() => {
+                    setEditingRoomId(room.id);
+                    setEditedNumber(room.number);
+                  }}
                 >
                   Editar número
                 </button>
@@ -177,6 +181,13 @@ export default function RoomsPage() {
             )}
 
             <p className="text-sm text-gray-600 mb-1">Estado: {room.state}</p>
+
+            {room.cleaningBy && (
+              <p className="text-sm text-blue-600 font-semibold mb-2">
+                🧹 En limpieza por: {room.cleaningBy}
+              </p>
+            )}
+
             <p className="text-xs text-gray-500">
               🧼 Última limpieza: {formatDate(room.lastCleaned)}
             </p>
@@ -186,44 +197,43 @@ export default function RoomsPage() {
 
             <div className="space-x-2 mb-2">
               <button
-                className="text-sm px-2 py-1 bg-green-100 hover:bg-green-200 rounded"
                 onClick={() => updateRoomState(room.id, 'CLEAN')}
+                className="text-sm px-2 py-1 bg-green-100 hover:bg-green-200 rounded"
               >
                 CLEAN
               </button>
               <button
-                className="text-sm px-2 py-1 bg-yellow-100 hover:bg-yellow-200 rounded"
                 onClick={() => updateRoomState(room.id, 'SE')}
+                className="text-sm px-2 py-1 bg-yellow-100 hover:bg-yellow-200 rounded"
               >
                 SE
               </button>
               <button
-                className="text-sm px-2 py-1 bg-red-100 hover:bg-red-200 rounded"
                 onClick={() => updateRoomState(room.id, 'CO')}
+                className="text-sm px-2 py-1 bg-red-100 hover:bg-red-200 rounded"
               >
                 CO
               </button>
             </div>
 
-            {/* Botones para registrar manualmente */}
             <div className="space-x-2 mb-2">
               <button
-                className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded"
                 onClick={() => registerManual(room.id, 'clean')}
+                className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded"
               >
                 Registrar limpieza
               </button>
               <button
-                className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded"
                 onClick={() => registerManual(room.id, 'maintenance')}
+                className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded"
               >
                 Registrar mantenimiento
               </button>
             </div>
 
             <button
-              className="text-xs text-red-600 underline"
               onClick={() => deleteRoom(room.id)}
+              className="text-xs text-red-600 underline"
             >
               Eliminar habitación
             </button>
